@@ -16,7 +16,7 @@
  *   );
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Eye, EyeOff, ChevronDown, ChevronRight,
@@ -41,6 +41,41 @@ function getMenuSnapshot() {
   )
 }
 
+// ── Ingredient suggestions hook ───────────────────────────────────────────────
+
+function useIngredientSuggestions(term) {
+  const [suggestions, setSuggestions] = useState([])
+
+  useEffect(() => {
+    if (!term || term.length < 2) {
+      setSuggestions([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      const { data } = await supabase
+        .from('ingredients')
+        .select('shopping_name, name, grocery_category')
+        .or(`shopping_name.ilike.%${term}%,name.ilike.%${term}%`)
+        .limit(10)
+
+      if (!data) return
+      const seen = new Set()
+      const unique = []
+      for (const row of data) {
+        const display = row.shopping_name || row.name
+        if (!display || seen.has(display.toLowerCase())) continue
+        seen.add(display.toLowerCase())
+        unique.push({ display, category: row.grocery_category ?? null })
+      }
+      setSuggestions(unique)
+    }, 300)
+
+    return () => clearTimeout(timer)
+  }, [term])
+
+  return suggestions
+}
+
 // ── Inline edit / add panel ───────────────────────────────────────────────────
 
 function EditPanel({ initial, onSave, onCancel, onDelete, saving }) {
@@ -49,26 +84,76 @@ function EditPanel({ initial, onSave, onCancel, onDelete, saving }) {
     quantity: initial?.quantity ?? '',
     unit: initial?.unit ?? '',
     brand: initial?.brand ?? '',
+    category: null,
   })
+  const [showSuggestions, setShowSuggestions] = useState(false)
   const isNew = !initial?.id
+  const containerRef = useRef(null)
+
+  const suggestions = useIngredientSuggestions(isNew ? draft.name : '')
+
+  // Show dropdown whenever suggestions arrive
+  useEffect(() => {
+    setShowSuggestions(suggestions.length > 0)
+  }, [suggestions])
+
+  // Dismiss on outside click
+  useEffect(() => {
+    if (!showSuggestions) return
+    function onMouseDown(e) {
+      if (containerRef.current && !containerRef.current.contains(e.target)) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [showSuggestions])
 
   function set(field, val) {
     setDraft((prev) => ({ ...prev, [field]: val }))
   }
 
+  function pickSuggestion(s) {
+    setDraft((prev) => ({
+      ...prev,
+      name: s.display,
+      ...(s.category ? { category: s.category } : {}),
+    }))
+    setShowSuggestions(false)
+  }
+
   return (
     <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 space-y-3">
-      <input
-        autoFocus
-        className="input w-full text-sm"
-        placeholder="Item name *"
-        value={draft.name}
-        onChange={(e) => set('name', e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && draft.name.trim()) onSave(draft)
-          if (e.key === 'Escape') onCancel()
-        }}
-      />
+      <div className="relative" ref={containerRef}>
+        <input
+          autoFocus
+          className="input w-full text-sm"
+          placeholder="Item name *"
+          value={draft.name}
+          onChange={(e) => set('name', e.target.value)}
+          onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && draft.name.trim()) { setShowSuggestions(false); onSave(draft) }
+            if (e.key === 'Escape') { if (showSuggestions) setShowSuggestions(false); else onCancel() }
+          }}
+        />
+        {showSuggestions && (
+          <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+            {suggestions.map((s) => (
+              <li key={s.display}>
+                <button
+                  type="button"
+                  onMouseDown={(e) => { e.preventDefault(); pickSuggestion(s) }}
+                  className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-indigo-50 transition-colors"
+                >
+                  <span>{s.display}</span>
+                  {s.category && <span className="text-xs text-gray-400 shrink-0">{s.category}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
       <div className="flex gap-2">
         <input
           className="input flex-1 text-sm"
@@ -284,7 +369,12 @@ export default function ShoppingList() {
       map[cat].push(item)
     }
     return CATEGORIES
-      .map((cat) => ({ category: cat, items: map[cat] }))
+      .map((cat) => ({
+        category: cat,
+        items: map[cat].slice().sort((a, b) =>
+          (a.name || '').toLowerCase().localeCompare((b.name || '').toLowerCase())
+        ),
+      }))
       .filter((g) => g.items.length > 0)
   }, [items])
 
@@ -379,24 +469,50 @@ export default function ShoppingList() {
     setSavingEdit(true)
     try {
       if (editingId === 'new') {
-        // Categorize the new item
-        const category = await categorizeOne(draft.name.trim())
-        const { data, error } = await supabase
+        const trimmedName = draft.name.trim()
+
+        // Check for an existing row with the same name (case-insensitive)
+        const { data: existing } = await supabase
           .from('shopping_list_items')
-          .insert({
-            name: draft.name.trim(),
-            quantity: draft.quantity?.trim() ?? '',
-            unit: draft.unit?.trim() ?? '',
-            brand: draft.brand?.trim() || null,
-            category,
-            is_checked: false,
-            is_manual: true,
-          })
-          .select()
-          .single()
-        if (error) throw error
-        setItems((prev) => [...prev, data])
+          .select('id, quantity, unit')
+          .ilike('name', trimmedName)
+          .maybeSingle()
+
+        if (existing) {
+          // Merge: update quantity on the existing row instead of inserting a duplicate
+          const { data, error } = await supabase
+            .from('shopping_list_items')
+            .update({
+              quantity: draft.quantity?.trim() ?? existing.quantity,
+              unit: draft.unit?.trim() || existing.unit,
+              brand: draft.brand?.trim() || null,
+            })
+            .eq('id', existing.id)
+            .select()
+            .single()
+          if (error) throw error
+          setItems((prev) => prev.map((i) => i.id === existing.id ? data : i))
+        } else {
+          // New item — categorize then insert
+          const category = draft.category ?? await categorizeOne(trimmedName)
+          const { data, error } = await supabase
+            .from('shopping_list_items')
+            .insert({
+              name: trimmedName,
+              quantity: draft.quantity?.trim() ?? '',
+              unit: draft.unit?.trim() ?? '',
+              brand: draft.brand?.trim() || null,
+              category,
+              is_checked: false,
+              is_manual: true,
+            })
+            .select()
+            .single()
+          if (error) throw error
+          setItems((prev) => [...prev, data])
+        }
       } else {
+        // Editing an existing item
         const { data, error } = await supabase
           .from('shopping_list_items')
           .update({
