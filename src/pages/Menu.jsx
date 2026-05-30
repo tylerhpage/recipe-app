@@ -220,7 +220,7 @@ function SavedMenuModal({ menu, onReload, onDelete, onClose }) {
   useEffect(() => {
     supabase
       .from('menu_items')
-      .select('id, recipe_title, planned_servings, source')
+      .select('id, recipe_id, recipe_title, planned_servings, source')
       .eq('menu_id', menu.id)
       .then(({ data }) => {
         setItems(data ?? [])
@@ -334,7 +334,7 @@ export default function Menu() {
   useEffect(() => {
     supabase
       .from('menus')
-      .select('id, title, created_at, menu_items ( recipe_title, planned_servings, source )')
+      .select('id, title, created_at, menu_items ( recipe_id, recipe_title, planned_servings, source )')
       .order('created_at', { ascending: false })
       .then(({ data }) => { setSavedMenus(data ?? []); setSavedMenusLoading(false) })
   }, [])
