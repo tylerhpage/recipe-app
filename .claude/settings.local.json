@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "PowerShell($env:PATH -split ';' | Where-Object { $_ -match 'node' -or $_ -match 'npm' })",
+      "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\nodejs\", \"$env:APPDATA\\\\npm\", \"$env:ProgramFiles\\\\nodejs\" -ErrorAction SilentlyContinue | Select-Object FullName)",
+      "PowerShell(Get-Command node, npm, pnpm, yarn -ErrorAction SilentlyContinue)",
+      "PowerShell($env:PATH -split ';' | Where-Object { $_ -match 'node|npm|nvm' })"
+    ]
+  }
+}

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192">
+  <!-- Background -->
+  <rect width="192" height="192" rx="38" fill="#4f46e5"/>
+
+  <!-- Chef hat -->
+  <!-- Brim / band -->
+  <rect x="52" y="120" width="88" height="18" rx="4" fill="white"/>
+
+  <!-- Hat dome: three overlapping circles forming the puffed top -->
+  <!-- Centre puff -->
+  <circle cx="96" cy="90" r="34" fill="white"/>
+  <!-- Left puff -->
+  <circle cx="68" cy="100" r="26" fill="white"/>
+  <!-- Right puff -->
+  <circle cx="124" cy="100" r="26" fill="white"/>
+
+  <!-- Fill in the flat bottom of the dome so it sits cleanly on the band -->
+  <rect x="52" y="105" width="88" height="20" fill="white"/>
+</svg>
