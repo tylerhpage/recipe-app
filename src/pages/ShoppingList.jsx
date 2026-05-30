@@ -52,20 +52,20 @@ function useIngredientSuggestions(term) {
       return
     }
     const timer = setTimeout(async () => {
-      const { data } = await supabase
+      const { data, error: suggErr } = await supabase
         .from('ingredients')
-        .select('shopping_name, name, grocery_category')
+        .select('shopping_name, name')
         .or(`shopping_name.ilike.%${term}%,name.ilike.%${term}%`)
         .limit(10)
 
-      if (!data) return
+      if (suggErr || !data) return
       const seen = new Set()
       const unique = []
       for (const row of data) {
         const display = row.shopping_name || row.name
         if (!display || seen.has(display.toLowerCase())) continue
         seen.add(display.toLowerCase())
-        unique.push({ display, category: row.grocery_category ?? null })
+        unique.push({ display, category: null })
       }
       setSuggestions(unique)
     }, 300)
@@ -385,6 +385,7 @@ export default function ShoppingList() {
     setGenerateError(null)
     const snapshot = getMenuSnapshot()
     console.log('[ShoppingList] generate() called — menu snapshot:', snapshot)
+    console.log('[ShoppingList] loadActiveMenu():', loadActiveMenu())
 
     try {
       // Build recipe-derived items (may call Anthropic for categorization)

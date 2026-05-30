@@ -501,7 +501,7 @@ async function batchCategorize(names) {
  * @returns {Promise<Array>} same items with `.category` populated
  */
 export async function categorizeItems(items) {
-  const result = items.map(item => ({ ...item, category: lookupCategory(item.name) }))
+  const result = items.map(item => ({ ...item, category: item.category ?? lookupCategory(item.name) }))
   const unknowns = result.filter(r => !r.category)
 
   if (unknowns.length > 0) {

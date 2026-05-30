@@ -98,7 +98,7 @@ export async function buildShoppingList() {
   // ── 2. Fetch ingredients ──
   const { data: ingredients, error } = await supabase
     .from('ingredients')
-    .select('recipe_id, name, shopping_name, quantity, unit')
+    .select('recipe_id, name, shopping_name, quantity, unit, grocery_category')
     .in('recipe_id', recipeIds)
 
   console.log('[buildShoppingList] ingredients query result:', { ingredients, error })
@@ -134,6 +134,7 @@ export async function buildShoppingList() {
         scaledQty: scaled,
         unit: ing.unit ?? '',
         canSum: parsed !== null,
+        grocery_category: ing.grocery_category ?? null,
       }
     } else {
       // Only sum if both sides have numeric quantities
@@ -155,6 +156,8 @@ export async function buildShoppingList() {
     brand: null,
     is_manual: false,
     is_checked: false,
+    // Pre-populate category from DB so categorizeItems can skip AI for known items
+    category: m.grocery_category ?? null,
   }))
 
   // ── 5. Categorize ──
