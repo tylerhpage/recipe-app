@@ -71,19 +71,21 @@ export async function buildShoppingList() {
   }
 
   // ── 1. Group by recipeId ──
+  // Normalise property names: activeMenu.js uses recipeId/baseServings/plannedServings,
+  // but older localStorage entries may use recipe_id/base_servings/planned_servings.
   const recipeMap = {}
   for (const item of menuItems) {
-    if (!item.recipeId) {
+    const id = item.recipeId ?? item.recipe_id ?? item.id ?? null
+    if (!id) {
       console.warn('[buildShoppingList] menu item missing recipeId, skipping:', item)
       continue
     }
-    if (!recipeMap[item.recipeId]) {
-      recipeMap[item.recipeId] = {
-        baseServings: item.baseServings ?? 4,
-        totalPlanned: 0,
-      }
+    const base = item.baseServings ?? item.base_servings ?? 4
+    const planned = item.plannedServings ?? item.planned_servings ?? base
+    if (!recipeMap[id]) {
+      recipeMap[id] = { baseServings: base, totalPlanned: 0 }
     }
-    recipeMap[item.recipeId].totalPlanned += item.plannedServings
+    recipeMap[id].totalPlanned += planned
   }
 
   const recipeIds = Object.keys(recipeMap)
