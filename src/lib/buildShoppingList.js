@@ -124,9 +124,9 @@ export async function buildShoppingList() {
     const parsed = parseQuantity(ing.quantity)
     const scaled = parsed !== null ? parsed * ratio : null
 
-    const rawName = ing.shopping_name || ing.name
-    const key = `${rawName.toLowerCase().trim()}|||${(ing.unit ?? '').toLowerCase().trim()}`
-    const displayName = rawName.trim().charAt(0).toUpperCase() + rawName.trim().slice(1)
+    // Use shopping_name for deduplication/merging when available; fall back to name.
+    const displayName = (ing.shopping_name?.trim() || ing.name.trim())
+    const key = `${displayName.toLowerCase()}|||${(ing.unit ?? '').toLowerCase().trim()}`
 
     if (!merged[key]) {
       merged[key] = {
@@ -158,14 +158,5 @@ export async function buildShoppingList() {
   }))
 
   // ── 5. Categorize ──
-  const categorized = categorizeItems(raw)
-
-  // Sort alphabetically within each category so insertion order is stable.
-  categorized.sort((a, b) => {
-    const catCmp = (a.category ?? '').localeCompare(b.category ?? '')
-    if (catCmp !== 0) return catCmp
-    return a.name.toLowerCase().localeCompare(b.name.toLowerCase())
-  })
-
-  return categorized
+  return categorizeItems(raw)
 }

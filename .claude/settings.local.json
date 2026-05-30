@@ -5,7 +5,10 @@
       "PowerShell($env:PATH -split ';' | Where-Object { $_ -match 'node' -or $_ -match 'npm' })",
       "PowerShell(Get-ChildItem \"C:\\\\Program Files\\\\nodejs\", \"$env:APPDATA\\\\npm\", \"$env:ProgramFiles\\\\nodejs\" -ErrorAction SilentlyContinue | Select-Object FullName)",
       "PowerShell(Get-Command node, npm, pnpm, yarn -ErrorAction SilentlyContinue)",
-      "PowerShell($env:PATH -split ';' | Where-Object { $_ -match 'node|npm|nvm' })"
+      "PowerShell($env:PATH -split ';' | Where-Object { $_ -match 'node|npm|nvm' })",
+      "Bash(npx vite *)",
+      "PowerShell(Get-Command node, npm, npx -ErrorAction SilentlyContinue)",
+      "PowerShell(\\(Get-Content \"C:\\\\Users\\\\TylerPage\\\\recipe-app\\\\src\\\\pages\\\\ShoppingList.jsx\"\\) -join \"`n\" | Select-String \"useRef|clearToast|handleClearList|useIngredientSuggestions|Action bar\" | ForEach-Object { $_.LineNumber.ToString\\(\\) + \": \" + $_.Line })"
     ]
   }
 }

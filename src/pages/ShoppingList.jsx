@@ -16,7 +16,7 @@
  *   );
  */
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Eye, EyeOff, ChevronDown, ChevronRight,
@@ -41,42 +41,6 @@ function getMenuSnapshot() {
   )
 }
 
-// ── Ingredient suggestions hook ───────────────────────────────────────────────
-
-function useIngredientSuggestions(term) {
-  const [suggestions, setSuggestions] = useState([])
-
-  useEffect(() => {
-    if (!term || term.length < 2) {
-      setSuggestions([])
-      return
-    }
-    const timer = setTimeout(async () => {
-      const { data } = await supabase
-        .from('ingredients')
-        .select('shopping_name, name, grocery_category')
-        .or(`shopping_name.ilike.%${term}%,name.ilike.%${term}%`)
-        .limit(10)
-
-      if (!data) return
-
-      const seen = new Set()
-      const unique = []
-      for (const row of data) {
-        const display = row.shopping_name || row.name
-        if (!display || seen.has(display.toLowerCase())) continue
-        seen.add(display.toLowerCase())
-        unique.push({ display, category: row.grocery_category ?? null })
-      }
-      setSuggestions(unique)
-    }, 300)
-
-    return () => clearTimeout(timer)
-  }, [term])
-
-  return suggestions
-}
-
 // ── Inline edit / add panel ───────────────────────────────────────────────────
 
 function EditPanel({ initial, onSave, onCancel, onDelete, saving }) {
@@ -85,76 +49,26 @@ function EditPanel({ initial, onSave, onCancel, onDelete, saving }) {
     quantity: initial?.quantity ?? '',
     unit: initial?.unit ?? '',
     brand: initial?.brand ?? '',
-    category: initial?.category ?? null,
   })
-  const [showSuggestions, setShowSuggestions] = useState(false)
   const isNew = !initial?.id
-
-  const suggestions = useIngredientSuggestions(isNew ? draft.name : '')
-  const containerRef = useRef(null)
-
-  useEffect(() => {
-    if (!showSuggestions) return
-    function handleClick(e) {
-      if (containerRef.current && !containerRef.current.contains(e.target)) {
-        setShowSuggestions(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClick)
-    return () => document.removeEventListener('mousedown', handleClick)
-  }, [showSuggestions])
-
-  useEffect(() => {
-    setShowSuggestions(suggestions.length > 0)
-  }, [suggestions])
 
   function set(field, val) {
     setDraft((prev) => ({ ...prev, [field]: val }))
   }
 
-  function pickSuggestion(s) {
-    setDraft((prev) => ({
-      ...prev,
-      name: s.display,
-      ...(s.category ? { category: s.category } : {}),
-    }))
-    setShowSuggestions(false)
-  }
-
   return (
     <div className="bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-3 space-y-3">
-      <div className="relative" ref={containerRef}>
-        <input
-          autoFocus
-          className="input w-full text-sm"
-          placeholder="Item name *"
-          value={draft.name}
-          onChange={(e) => set('name', e.target.value)}
-          onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && draft.name.trim()) { setShowSuggestions(false); onSave(draft) }
-            if (e.key === 'Escape') { if (showSuggestions) setShowSuggestions(false); else onCancel() }
-          }}
-        />
-        {showSuggestions && (
-          <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
-            {suggestions.map((s) => (
-              <li key={s.display}>
-                <button
-                  type="button"
-                  onMouseDown={(e) => { e.preventDefault(); pickSuggestion(s) }}
-                  className="w-full text-left px-3 py-2 text-sm text-gray-800 hover:bg-indigo-50 transition-colors flex items-center justify-between gap-2"
-                >
-                  <span>{s.display}</span>
-                  {s.category && (
-                    <span className="text-xs text-gray-400 shrink-0">{s.category}</span>
-                  )}
-                </button>
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      <input
+        autoFocus
+        className="input w-full text-sm"
+        placeholder="Item name *"
+        value={draft.name}
+        onChange={(e) => set('name', e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && draft.name.trim()) onSave(draft)
+          if (e.key === 'Escape') onCancel()
+        }}
+      />
       <div className="flex gap-2">
         <input
           className="input flex-1 text-sm"
@@ -370,10 +284,7 @@ export default function ShoppingList() {
       map[cat].push(item)
     }
     return CATEGORIES
-      .map((cat) => ({
-        category: cat,
-        items: map[cat].slice().sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
-      }))
+      .map((cat) => ({ category: cat, items: map[cat] }))
       .filter((g) => g.items.length > 0)
   }, [items])
 
@@ -468,8 +379,8 @@ export default function ShoppingList() {
     setSavingEdit(true)
     try {
       if (editingId === 'new') {
-        // Use pre-filled category from suggestion, or fall back to AI categorization
-        const category = draft.category ?? await categorizeOne(draft.name.trim())
+        // Categorize the new item
+        const category = await categorizeOne(draft.name.trim())
         const { data, error } = await supabase
           .from('shopping_list_items')
           .insert({
@@ -508,13 +419,6 @@ export default function ShoppingList() {
     }
   }
 
-  // ── Delete item ───────────────────────────────────────────────────────────
-  async function handleDelete(id) {
-    await supabase.from('shopping_list_items').delete().eq('id', id)
-    setItems((prev) => prev.filter((i) => i.id !== id))
-    setEditingId(null)
-  }
-
   // ── Clear entire list ─────────────────────────────────────────────────────
   async function handleClearList() {
     if (!window.confirm('Clear the entire shopping list? This cannot be undone.')) return
@@ -524,6 +428,13 @@ export default function ShoppingList() {
     localStorage.removeItem(SNAPSHOT_KEY)
     setClearToast(true)
     setTimeout(() => setClearToast(false), 2500)
+  }
+
+  // ── Delete item ───────────────────────────────────────────────────────────
+  async function handleDelete(id) {
+    await supabase.from('shopping_list_items').delete().eq('id', id)
+    setItems((prev) => prev.filter((i) => i.id !== id))
+    setEditingId(null)
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -551,7 +462,7 @@ export default function ShoppingList() {
       {/* ── Action bar ── */}
       {!loading && hasMenu && (
         <div className="space-y-2">
-          {/* Primary: Generate / Regenerate — full width */}
+          {/* Primary: Generate / Regenerate */}
           <button
             onClick={generate}
             disabled={generating}
@@ -560,10 +471,12 @@ export default function ShoppingList() {
             {generating
               ? <RefreshCw size={15} className="animate-spin" />
               : <ShoppingCart size={15} />}
-            {generating ? (hasItems ? 'Regenerating…' : 'Generating…') : (hasItems ? 'Regenerate List' : 'Generate List')}
+            {generating
+              ? (hasItems ? 'Regenerating…' : 'Generating…')
+              : (hasItems ? 'Regenerate List' : 'Generate List')}
           </button>
 
-          {/* Secondary: Add Item + Clear List — side by side */}
+          {/* Secondary: Add Item + Clear List */}
           <div className="flex gap-2">
             <button
               onClick={() => setEditingId('new')}
@@ -586,7 +499,7 @@ export default function ShoppingList() {
         </div>
       )}
 
-      {/* ── New item panel — shown near the top ── */}
+      {/* ── New item panel — anchored near the top ── */}
       {!loading && editingId === 'new' && (
         <EditPanel
           initial={null}
@@ -597,18 +510,7 @@ export default function ShoppingList() {
         />
       )}
 
-      {/* ── Add Item button when there's no menu (action bar is hidden) ── */}
-      {!loading && !hasMenu && editingId !== 'new' && (
-        <button
-          onClick={() => setEditingId('new')}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-200 text-sm font-medium text-gray-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors"
-        >
-          <Plus size={16} />
-          Add Item
-        </button>
-      )}
-
-      {/* ── Clear toast ── */}
+      {/* ── "List cleared" toast ── */}
       {clearToast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-gray-800 text-white text-sm font-medium px-4 py-2 rounded-xl shadow-lg pointer-events-none">
           List cleared
@@ -701,6 +603,16 @@ export default function ShoppingList() {
         />
       ))}
 
+      {/* ── Add Item button (no-menu fallback only) ── */}
+      {!loading && !hasMenu && editingId !== 'new' && (
+        <button
+          onClick={() => setEditingId('new')}
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border-2 border-dashed border-gray-200 text-sm font-medium text-gray-500 hover:border-indigo-400 hover:text-indigo-600 hover:bg-indigo-50/50 transition-colors"
+        >
+          <Plus size={16} />
+          Add Item
+        </button>
+      )}
 
     </div>
   )
