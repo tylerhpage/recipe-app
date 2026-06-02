@@ -52,22 +52,16 @@ function useIngredientSuggestions(term) {
       return
     }
     const timer = setTimeout(async () => {
-      const { data, error: suggErr } = await supabase
-        .from('ingredients')
-        .select('shopping_name, name')
-        .or(`shopping_name.ilike.%${term}%,name.ilike.%${term}%`)
+      const { data } = await supabase
+        .from('ingredient_lookup')
+        .select('id, name, canonical_name, grocery_category, usage_count')
+        .ilike('name', `%${term}%`)
+        .order('usage_count', { ascending: false })
+        .order('name', { ascending: true })
         .limit(10)
 
-      if (suggErr || !data) return
-      const seen = new Set()
-      const unique = []
-      for (const row of data) {
-        const display = row.shopping_name || row.name
-        if (!display || seen.has(display.toLowerCase())) continue
-        seen.add(display.toLowerCase())
-        unique.push({ display, category: null })
-      }
-      setSuggestions(unique)
+      if (!data) return
+      setSuggestions(data)
     }, 300)
 
     return () => clearTimeout(timer)
@@ -85,6 +79,7 @@ function EditPanel({ initial, onSave, onCancel, onDelete, saving }) {
     unit: initial?.unit ?? '',
     brand: initial?.brand ?? '',
     category: null,
+    canonical_name: null,
   })
   const [showSuggestions, setShowSuggestions] = useState(false)
   const isNew = !initial?.id
@@ -116,10 +111,13 @@ function EditPanel({ initial, onSave, onCancel, onDelete, saving }) {
   function pickSuggestion(s) {
     setDraft((prev) => ({
       ...prev,
-      name: s.display,
-      ...(s.category ? { category: s.category } : {}),
+      name: s.name,
+      category: s.grocery_category ?? prev.category,
+      canonical_name: s.canonical_name ?? null,
     }))
     setShowSuggestions(false)
+    // Fire-and-forget usage count increment
+    supabase.rpc('increment_ingredient_usage', { ids: [s.id] })
   }
 
   return (
@@ -140,14 +138,14 @@ function EditPanel({ initial, onSave, onCancel, onDelete, saving }) {
         {showSuggestions && (
           <ul className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
             {suggestions.map((s) => (
-              <li key={s.display}>
+              <li key={s.id}>
                 <button
                   type="button"
                   onMouseDown={(e) => { e.preventDefault(); pickSuggestion(s) }}
                   className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-indigo-50 transition-colors"
                 >
-                  <span>{s.display}</span>
-                  {s.category && <span className="text-xs text-gray-400 shrink-0">{s.category}</span>}
+                  <span>{s.name}</span>
+                  {s.grocery_category && <span className="text-xs text-gray-400 shrink-0">{s.grocery_category}</span>}
                 </button>
               </li>
             ))}

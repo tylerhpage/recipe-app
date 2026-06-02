@@ -1,8 +1,9 @@
-import { useState, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { X, ImagePlus, Loader2, Plus, Trash2 } from 'lucide-react'
+import { X, ImagePlus, Loader2, Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
 import { extractRecipe } from '../lib/extractRecipe'
 import { supabase } from '../lib/supabase'
+import matchIngredients from '../lib/matchIngredients'
 import TagSelector from '../components/TagSelector'
 
 const RECIPE_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Side', 'Beverage', 'Snack', 'Appetizer']
@@ -60,8 +61,10 @@ async function saveRecipe({ files, recipe, selectedTagIds }) {
     if (photoErr) throw photoErr
   }
 
-  // 3. Insert ingredients
-  const ingredientRows = recipe.ingredients
+  // 3. Match ingredients against lookup table, then insert
+  const enrichedIngredients = await matchIngredients(recipe.ingredients)
+
+  const ingredientRows = enrichedIngredients
     .filter((ing) => ing.name.trim())
     .map((ing) => ({
       recipe_id: recipeId,
@@ -69,6 +72,9 @@ async function saveRecipe({ files, recipe, selectedTagIds }) {
       shopping_name: ing.shopping_name?.trim() || null,
       quantity: ing.quantity,
       unit: ing.unit,
+      canonical_name: ing.canonical_name ?? null,
+      grocery_category: ing.grocery_category ?? null,
+      lookup_id: ing.lookup_id ?? null,
     }))
 
   if (ingredientRows.length > 0) {
@@ -211,6 +217,262 @@ function Section({ title, children }) {
     <div>
       <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">{title}</h3>
       {children}
+    </div>
+  )
+}
+
+// ── Add Ingredient to Library card ───────────────────────────────────────────
+
+const GROCERY_CATEGORIES = [
+  'Meat & Seafood',
+  'Dairy & Eggs',
+  'Produce - Vegetables',
+  'Produce - Fruit',
+  'Pantry & Dry Goods',
+  'Spices & Condiments',
+  'Bread & Bakery',
+  'Frozen',
+  'Other',
+]
+
+function AddToLibraryCard() {
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [canonicalName, setCanonicalName] = useState('')
+  const [category, setCategory] = useState('')
+  const [aliases, setAliases] = useState('')
+  const [suggestions, setSuggestions] = useState([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [exactMatch, setExactMatch] = useState(null) // { name, grocery_category } | null
+  const [saving, setSaving] = useState(false)
+  const [successMsg, setSuccessMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
+  const nameRef = useRef(null)
+  const suggestionsRef = useRef(null)
+
+  // Dismiss dropdown on outside click
+  useEffect(() => {
+    if (!showSuggestions) return
+    function onMouseDown(e) {
+      if (
+        nameRef.current && !nameRef.current.contains(e.target) &&
+        suggestionsRef.current && !suggestionsRef.current.contains(e.target)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [showSuggestions])
+
+  async function handleNameChange(value) {
+    setName(value)
+    setCanonicalName(value)
+    setSuccessMsg('')
+    setErrorMsg('')
+    setExactMatch(null)
+
+    if (value.length < 2) {
+      setSuggestions([])
+      setShowSuggestions(false)
+      return
+    }
+
+    const { data } = await supabase
+      .from('ingredient_lookup')
+      .select('id, name, grocery_category')
+      .ilike('name', `%${value}%`)
+      .limit(5)
+
+    if (!data) return
+    setSuggestions(data)
+    setShowSuggestions(data.length > 0)
+
+    // Check for exact match
+    const exact = data.find(
+      (row) => row.name.toLowerCase() === value.toLowerCase().trim()
+    )
+    setExactMatch(exact ?? null)
+  }
+
+  function pickSuggestion(s) {
+    setName(s.name)
+    setCanonicalName(s.name)
+    setCategory(s.grocery_category ?? '')
+    setShowSuggestions(false)
+    const exact = { name: s.name, grocery_category: s.grocery_category }
+    setExactMatch(exact)
+  }
+
+  async function handleSave() {
+    setErrorMsg('')
+    setSuccessMsg('')
+
+    const trimmedName = name.trim()
+    const trimmedCanonical = canonicalName.trim()
+
+    if (!trimmedName || !trimmedCanonical || !category) {
+      setErrorMsg('Name, canonical name, and category are required.')
+      return
+    }
+
+    setSaving(true)
+    try {
+      // Final duplicate check
+      const { data: check } = await supabase
+        .from('ingredient_lookup')
+        .select('id, grocery_category')
+        .ilike('name', trimmedName)
+        .limit(1)
+        .single()
+
+      if (check) {
+        setExactMatch({ name: trimmedName, grocery_category: check.grocery_category })
+        setSaving(false)
+        return
+      }
+
+      const { error } = await supabase.from('ingredient_lookup').insert({
+        name: trimmedName,
+        canonical_name: trimmedCanonical,
+        grocery_category: category,
+        aliases: aliases.trim(),
+        usage_count: 0,
+      })
+
+      if (error) throw error
+
+      setSuccessMsg(`✓ ${trimmedName} added to ingredient library`)
+      setName('')
+      setCanonicalName('')
+      setCategory('')
+      setAliases('')
+      setSuggestions([])
+      setExactMatch(null)
+      setOpen(false)
+    } catch (err) {
+      setErrorMsg(`Error: ${err.message}`)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="border border-gray-200 rounded-xl overflow-hidden">
+      {/* Header toggle */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+      >
+        <span className="text-sm font-medium text-gray-500">Add Ingredient to Library</span>
+        {open
+          ? <ChevronUp size={15} className="text-gray-400 shrink-0" />
+          : <ChevronDown size={15} className="text-gray-400 shrink-0" />}
+      </button>
+
+      {/* Success message (visible even when collapsed) */}
+      {successMsg && (
+        <div className="px-4 py-2 bg-green-50 border-t border-green-100 text-sm text-green-700">
+          {successMsg}
+        </div>
+      )}
+
+      {/* Form */}
+      {open && (
+        <div className="px-4 py-4 space-y-3 border-t border-gray-200 bg-white">
+
+          {/* Name */}
+          <div className="relative">
+            <label className="label text-xs text-gray-500">Ingredient Name *</label>
+            <input
+              ref={nameRef}
+              className="input w-full text-sm"
+              placeholder="e.g. Kosher Salt"
+              value={name}
+              onChange={(e) => handleNameChange(e.target.value)}
+              onFocus={() => { if (suggestions.length > 0) setShowSuggestions(true) }}
+            />
+            {showSuggestions && (
+              <ul
+                ref={suggestionsRef}
+                className="absolute z-50 left-0 right-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden"
+              >
+                {suggestions.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => { e.preventDefault(); pickSuggestion(s) }}
+                      className="w-full flex items-center justify-between gap-2 px-3 py-2 text-sm text-gray-800 hover:bg-indigo-50 transition-colors"
+                    >
+                      <span>{s.name}</span>
+                      {s.grocery_category && (
+                        <span className="text-xs text-gray-400 shrink-0">{s.grocery_category}</span>
+                      )}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            {exactMatch && (
+              <p className="mt-1 text-xs text-amber-600">
+                Already in library as <span className="font-medium">{exactMatch.grocery_category}</span>
+              </p>
+            )}
+          </div>
+
+          {/* Canonical name */}
+          <div>
+            <label className="label text-xs text-gray-500">Canonical Name *</label>
+            <input
+              className="input w-full text-sm"
+              placeholder="e.g. Salt"
+              value={canonicalName}
+              onChange={(e) => { setCanonicalName(e.target.value); setSuccessMsg(''); setErrorMsg('') }}
+            />
+            <p className="mt-1 text-xs text-gray-400">
+              The base name used when combining duplicates on your shopping list (e.g. "Salt" for "Kosher Salt")
+            </p>
+          </div>
+
+          {/* Category */}
+          <div>
+            <label className="label text-xs text-gray-500">Grocery Category *</label>
+            <select
+              className="input w-full text-sm"
+              value={category}
+              onChange={(e) => { setCategory(e.target.value); setSuccessMsg(''); setErrorMsg('') }}
+            >
+              <option value="">Select category…</option>
+              {GROCERY_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Aliases */}
+          <div>
+            <label className="label text-xs text-gray-500">Aliases (optional)</label>
+            <input
+              className="input w-full text-sm"
+              placeholder="e.g. cherry tomato, grape tomatoes"
+              value={aliases}
+              onChange={(e) => { setAliases(e.target.value); setSuccessMsg(''); setErrorMsg('') }}
+            />
+          </div>
+
+          {errorMsg && (
+            <p className="text-xs text-red-600">{errorMsg}</p>
+          )}
+
+          <button
+            onClick={handleSave}
+            disabled={saving || !!exactMatch || !name.trim() || !canonicalName.trim() || !category}
+            className="w-full py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 transition-colors disabled:opacity-40 flex items-center justify-center gap-2"
+          >
+            {saving ? <><Loader2 size={14} className="animate-spin" /> Saving…</> : 'Save to Library'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -375,6 +637,10 @@ export default function AddRecipe() {
             'Extract Recipe'
           )}
         </button>
+
+        <div className="mt-6">
+          <AddToLibraryCard />
+        </div>
       </div>
     )
   }

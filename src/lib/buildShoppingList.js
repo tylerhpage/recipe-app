@@ -100,7 +100,7 @@ export async function buildShoppingList() {
   // ── 2. Fetch ingredients ──
   const { data: ingredients, error } = await supabase
     .from('ingredients')
-    .select('recipe_id, name, shopping_name, quantity, unit, grocery_category')
+    .select('recipe_id, name, shopping_name, canonical_name, quantity, unit, grocery_category')
     .in('recipe_id', recipeIds)
 
   console.log('[buildShoppingList] ingredients query result:', { ingredients, error })
@@ -126,9 +126,12 @@ export async function buildShoppingList() {
     const parsed = parseQuantity(ing.quantity)
     const scaled = parsed !== null ? parsed * ratio : null
 
-    // Use shopping_name for deduplication/merging when available; fall back to name.
-    const displayName = (ing.shopping_name?.trim() || ing.name.trim())
-    const key = `${displayName.toLowerCase()}|||${(ing.unit ?? '').toLowerCase().trim()}`
+    // Merge key: prefer canonical_name so variants ("Kosher Salt", "Sea Salt") combine;
+    // fall back to shopping_name then name.
+    const mergeKey = (ing.canonical_name || ing.shopping_name || ing.name || '').toLowerCase().trim()
+    // Display name follows the same priority for the label shown on the list.
+    const displayName = (ing.canonical_name || ing.shopping_name || ing.name || '').trim()
+    const key = `${mergeKey}|||${(ing.unit ?? '').toLowerCase().trim()}`
 
     if (!merged[key]) {
       merged[key] = {
