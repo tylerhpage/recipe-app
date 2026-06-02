@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { Loader2, Plus, Trash2 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
@@ -6,6 +6,86 @@ import matchIngredients from '../lib/matchIngredients'
 import TagSelector from '../components/TagSelector'
 
 const RECIPE_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Side', 'Beverage', 'Snack', 'Appetizer']
+
+// ── Shopping name autocomplete input ─────────────────────────────────────────
+
+function ShoppingNameInput({ value, onChange }) {
+  const [suggestions, setSuggestions] = useState([])
+  const [showDropdown, setShowDropdown] = useState(false)
+  const wrapperRef = useRef(null)
+
+  useEffect(() => {
+    if (!value || value.length < 2) {
+      setSuggestions([])
+      setShowDropdown(false)
+      return
+    }
+    const timer = setTimeout(async () => {
+      const { data } = await supabase
+        .from('ingredients')
+        .select('shopping_name, name')
+        .or(`shopping_name.ilike.%${value}%,name.ilike.%${value}%`)
+        .limit(10)
+
+      if (!data) return
+      const seen = new Set()
+      const unique = []
+      for (const row of data) {
+        const display = row.shopping_name?.trim() || row.name?.trim()
+        if (!display || seen.has(display.toLowerCase())) continue
+        seen.add(display.toLowerCase())
+        unique.push(display)
+      }
+      setSuggestions(unique)
+      setShowDropdown(unique.length > 0)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [value])
+
+  useEffect(() => {
+    if (!showDropdown) return
+    function onMouseDown(e) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
+        setShowDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', onMouseDown)
+    return () => document.removeEventListener('mousedown', onMouseDown)
+  }, [showDropdown])
+
+  function pick(display) {
+    onChange(display)
+    setShowDropdown(false)
+    setSuggestions([])
+  }
+
+  return (
+    <div className="relative flex-1" ref={wrapperRef}>
+      <input
+        className="input w-full text-xs py-1 text-gray-500"
+        placeholder="e.g. Chicken Breast"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => { if (suggestions.length > 0) setShowDropdown(true) }}
+      />
+      {showDropdown && (
+        <ul className="absolute z-50 left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
+          {suggestions.map((s) => (
+            <li key={s}>
+              <button
+                type="button"
+                onMouseDown={(e) => { e.preventDefault(); pick(s) }}
+                className="w-full text-left px-3 py-1.5 text-xs text-gray-700 hover:bg-indigo-50 transition-colors"
+              >
+                {s}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 // ── Sub-editors (same as AddRecipe) ──────────────────────────────────────────
 
@@ -56,11 +136,9 @@ function IngredientsEditor({ ingredients, onChange }) {
           </div>
           <div className="flex items-center gap-2 pl-0">
             <span className="text-xs text-gray-400 shrink-0">Shopping list name:</span>
-            <input
-              className="input flex-1 text-xs py-1 text-gray-500"
-              placeholder="e.g. Chicken Breast"
+            <ShoppingNameInput
               value={ing.shopping_name ?? ''}
-              onChange={(e) => update(ing.id, 'shopping_name', e.target.value)}
+              onChange={(val) => update(ing.id, 'shopping_name', val)}
             />
           </div>
         </div>
