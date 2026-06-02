@@ -8,6 +8,7 @@ import Menu from './pages/Menu'
 import ShoppingList from './pages/ShoppingList'
 import RecipeDetail from './pages/RecipeDetail'
 import AdminIngredients from './pages/AdminIngredients'
+import EditRecipe from './pages/EditRecipe'
 
 function App() {
   const [authenticated, setAuthenticated] = useState(() => !!getSession())
@@ -31,6 +32,7 @@ function App() {
           <Route path="/shopping" element={<ShoppingList />} />
           <Route path="/recipe/:id" element={<RecipeDetail />} />
           <Route path="/admin/ingredients" element={<AdminIngredients />} />
+          <Route path="/edit/:id"         element={<EditRecipe />} />
         </Routes>
       </Layout>
     </BrowserRouter>
