@@ -111,11 +111,14 @@ export async function buildShoppingList() {
     return []
   }
 
+  // Filter out ignored ingredients before any processing
+  const activeIngredients = ingredients.filter(ing => ing.canonical_name !== 'IGNORE')
+
   // ── 3. Scale + merge ──
   // Key: "name (lowercase) ||| unit (lowercase)" to group duplicates.
   const merged = {}
 
-  for (const ing of ingredients) {
+  for (const ing of activeIngredients) {
     const recipe = recipeMap[ing.recipe_id]
     if (!recipe) continue
 

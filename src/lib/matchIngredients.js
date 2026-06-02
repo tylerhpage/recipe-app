@@ -1,107 +1,86 @@
-import { supabase } from "../lib/supabase";
+import { supabase } from './supabase';
 
-const DESCRIPTOR_WORDS = [
-  "fresh", "dried", "frozen", "canned", "chopped", "sliced", "diced",
-  "minced", "grated", "shredded", "peeled", "cooked", "raw", "large",
-  "medium", "small", "divided", "optional", "boneless", "skinless",
-  "bone-in", "skin-on", "trimmed", "halved", "quartered", "crushed",
-  "ground", "whole", "toasted", "roasted", "packed", "ripe", "thin",
-  "thick", "finely", "roughly", "freshly", "extra-virgin", "extra virgin",
-  "unsweetened", "plain", "coarse", "fine", "young", "mature", "rinsed",
-  "drained", "washed", "pressed",
-];
-
-// Build once — longest phrases first so multi-word tokens don't partially match
-const DESCRIPTOR_PATTERN = new RegExp(
-  "\\b(" +
-    DESCRIPTOR_WORDS.slice()
-      .sort((a, b) => b.length - a.length)
-      .map((w) => w.replace(/[-]/g, "\\-"))
-      .join("|") +
-    ")\\b",
-  "gi"
-);
-
-function cleanIngredientName(raw) {
-  let name = raw;
-
-  // 1. Strip parenthetical notes
-  name = name.replace(/\(.*?\)/g, "");
-
-  // 2. Strip everything after the first comma
-  name = name.split(",")[0];
-
-  // 3. Strip leading quantities and measurements
-  name = name.replace(
-    /^\d+[\d\/\s]*(cup|cups|tbsp|tsp|tablespoon|tablespoons|teaspoon|teaspoons|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|liter|liters|pinch|bunch|clove|cloves|slice|slices|can|cans|package|packages|sprig|sprigs|leaf|leaves|head|heads|rib|ribs|stalk|stalks|piece|pieces|inch|inches)s?\s+/i,
-    ""
-  );
-
-  // Strip a plain leading number with no unit
-  name = name.replace(/^\d+\s+/, "");
-
-  // 4. Strip size/descriptor words
-  name = name.replace(DESCRIPTOR_PATTERN, "");
-
-  // 5. Strip trailing adjectives
-  name = name.replace(/\b(divided|optional|garnish|taste|serving|needed)\b/gi, "");
-
-  // 6. Collapse whitespace and trim
-  name = name.replace(/\s+/g, " ").trim();
-
-  return name;
+function cleanIngredientName(name) {
+  let n = name;
+  n = n.replace(/\(.*?\)/g, '');
+  n = n.split(',')[0];
+  n = n.replace(/^\d+[\d\/\s]*(cup|cups|tbsp|tsp|tablespoon|tablespoons|teaspoon|teaspoons|oz|ounce|ounces|lb|lbs|pound|pounds|g|gram|grams|kg|ml|liter|liters|pinch|bunch|clove|cloves|slice|slices|can|cans|package|packages|sprig|sprigs|leaf|leaves|head|heads|rib|ribs|stalk|stalks|piece|pieces|inch|inches)s?\s+/i, '');
+  n = n.replace(/^\d+\s+/, '');
+  const DESCRIPTOR_WORDS = ['fresh','dried','frozen','canned','chopped','sliced','diced','minced','grated','shredded','peeled','cooked','raw','large','medium','small','divided','optional','boneless','skinless','bone-in','skin-on','trimmed','halved','quartered','crushed','ground','whole','toasted','roasted','packed','ripe','thin','thick','finely','roughly','freshly','extra-virgin','extra virgin','unsweetened','plain','coarse','fine','rinsed','drained','washed','pressed'];
+  const sorted = DESCRIPTOR_WORDS.slice().sort((a, b) => b.length - a.length);
+  const pattern = new RegExp('\\b(' + sorted.map(w => w.replace(/[-]/g, '\\-')).join('|') + ')\\b', 'gi');
+  n = n.replace(pattern, '');
+  n = n.replace(/\b(divided|optional|garnish|taste|serving|needed)\b/gi, '');
+  n = n.replace(/\s+/g, ' ').trim();
+  return n;
 }
 
-async function lookupIngredient(rawName) {
-  // 1. Clean the name first
-  const cleaned = cleanIngredientName(rawName);
+async function tryMatch(term) {
+  if (!term) return null;
+  const cleaned = cleanIngredientName(term);
   if (!cleaned) return null;
 
-  // 2. Exact match on cleaned name (case-insensitive via ilike)
+  // Exact match on cleaned name
   const { data: exact } = await supabase
-    .from("ingredient_lookup")
-    .select("id, canonical_name, grocery_category")
-    .ilike("name", cleaned)
+    .from('ingredient_lookup')
+    .select('id, canonical_name, grocery_category')
+    .ilike('name', cleaned)
     .limit(1)
     .single();
 
   if (exact) return exact;
 
-  // 3. Additional descriptor stripping on the already-cleaned name
-  const stripped = cleaned.replace(DESCRIPTOR_PATTERN, "").replace(/\s+/g, " ").trim();
-  if (!stripped || stripped.toLowerCase() === cleaned.toLowerCase()) return null;
+  // Stripped match — remove remaining descriptors and try again
+  const stripped = cleaned.replace(/\b(whole|ground|dried|fresh|large|medium|small)\b/gi, '').replace(/\s+/g, ' ').trim();
+  if (stripped && stripped !== cleaned) {
+    const { data: strippedMatch } = await supabase
+      .from('ingredient_lookup')
+      .select('id, canonical_name, grocery_category')
+      .ilike('name', stripped)
+      .limit(1)
+      .single();
 
-  const { data: strippedMatch } = await supabase
-    .from("ingredient_lookup")
-    .select("id, canonical_name, grocery_category")
-    .ilike("name", stripped)
-    .limit(1)
-    .single();
+    if (strippedMatch) return strippedMatch;
+  }
 
-  return strippedMatch ?? null;
+  return null;
+}
+
+async function lookupIngredient(ingredient) {
+  const primaryTerm = ingredient.shopping_name?.trim() || ingredient.name?.trim();
+  const fallbackTerm = ingredient.shopping_name?.trim() ? ingredient.name?.trim() : null;
+
+  let result = await tryMatch(primaryTerm);
+
+  if (!result && fallbackTerm && fallbackTerm !== primaryTerm) {
+    result = await tryMatch(fallbackTerm);
+  }
+
+  return result;
 }
 
 export default async function matchIngredients(ingredients) {
-  const results = await Promise.all(
-    ingredients.map(async (ingredient) => {
-      const rawName = (ingredient.name ?? "").trim();
-      if (!rawName) {
-        return { ...ingredient, canonical_name: null, grocery_category: null, lookup_id: null };
-      }
+  // Skip ingredients already marked as IGNORE
+  const toProcess = ingredients.filter(ing => ing.canonical_name !== 'IGNORE');
 
-      const match = await lookupIngredient(rawName);
+  const matches = await Promise.all(toProcess.map(ing => lookupIngredient(ing)));
 
-      if (match) {
-        return {
-          ...ingredient,
-          canonical_name: match.canonical_name,
-          grocery_category: match.grocery_category,
-          lookup_id: match.id,
-        };
-      }
-
-      return { ...ingredient, canonical_name: null, grocery_category: null, lookup_id: null };
+  // Build a lookup map of results keyed by index within toProcess
+  const enriched = new Map(
+    toProcess.map((ingredient, i) => {
+      const match = matches[i];
+      return [
+        ingredient,
+        match
+          ? { ...ingredient, canonical_name: match.canonical_name, grocery_category: match.grocery_category, lookup_id: match.id }
+          : { ...ingredient, canonical_name: null, grocery_category: null, lookup_id: null },
+      ];
     })
+  );
+
+  // Merge back — IGNORE ingredients pass through unchanged
+  const results = ingredients.map(ing =>
+    ing.canonical_name === 'IGNORE' ? ing : (enriched.get(ing) ?? ing)
   );
 
   // Collect matched ids for usage_count increment
@@ -118,7 +97,7 @@ export default async function matchIngredients(ingredients) {
 
   // Fire-and-forget usage count update
   if (matchedIds.length > 0) {
-    supabase.rpc("increment_ingredient_usage", { ids: matchedIds });
+    supabase.rpc('increment_ingredient_usage', { ids: matchedIds });
   }
 
   return results;

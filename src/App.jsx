@@ -7,6 +7,7 @@ import AddRecipe from './pages/AddRecipe'
 import Menu from './pages/Menu'
 import ShoppingList from './pages/ShoppingList'
 import RecipeDetail from './pages/RecipeDetail'
+import AdminIngredients from './pages/AdminIngredients'
 
 function App() {
   const [authenticated, setAuthenticated] = useState(() => !!getSession())
@@ -29,6 +30,7 @@ function App() {
           <Route path="/menu"     element={<Menu />} />
           <Route path="/shopping" element={<ShoppingList />} />
           <Route path="/recipe/:id" element={<RecipeDetail />} />
+          <Route path="/admin/ingredients" element={<AdminIngredients />} />
         </Routes>
       </Layout>
     </BrowserRouter>

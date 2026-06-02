@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { Star, Clock, ChefHat, Search, X, BookOpen } from 'lucide-react'
+import { useNavigate, Link } from 'react-router-dom'
+import { Star, Clock, ChefHat, Search, X, BookOpen, AlertTriangle } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 
 const RECIPE_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Side', 'Beverage', 'Snack', 'Appetizer']
@@ -92,6 +92,7 @@ export default function Library() {
   const [recipes, setRecipes] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [unmatchedCount, setUnmatchedCount] = useState(0)
 
   // Filters
   const [search, setSearch] = useState('')
@@ -105,6 +106,13 @@ export default function Library() {
       .then(setRecipes)
       .catch((err) => setError(err.message))
       .finally(() => setLoading(false))
+
+    // Count unmatched ingredients (fire independently — banner is non-critical)
+    supabase
+      .from('ingredients')
+      .select('id', { count: 'exact', head: true })
+      .is('canonical_name', null)
+      .then(({ count }) => setUnmatchedCount(count ?? 0))
   }, [])
 
   async function handleToggleFavorite(id, isFavorite) {
@@ -172,6 +180,24 @@ export default function Library() {
   return (
     <div className="p-4 space-y-4">
       <h2 className="text-2xl font-bold text-gray-900">Recipe Library</h2>
+
+      {/* Unmatched ingredients banner */}
+      {unmatchedCount > 0 && (
+        <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5">
+          <div className="flex items-center gap-2 text-sm text-amber-800">
+            <AlertTriangle size={15} className="text-amber-500 shrink-0" />
+            <span>
+              <span className="font-semibold">{unmatchedCount}</span> ingredient{unmatchedCount !== 1 ? 's' : ''} haven't been mapped to the ingredient library.
+            </span>
+          </div>
+          <Link
+            to="/admin/ingredients"
+            className="shrink-0 text-sm font-semibold text-amber-700 hover:text-amber-900 transition-colors whitespace-nowrap"
+          >
+            Map now →
+          </Link>
+        </div>
+      )}
 
       {/* Search bar */}
       <div className="relative">
