@@ -123,11 +123,12 @@ function FileThumbnail({ file, onRemove }) {
 function ShoppingNameInput({ value, onChange }) {
   const [suggestions, setSuggestions] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
+  const [focused, setFocused] = useState(false)
   const wrapperRef = useRef(null)
 
-  // Debounced query against ingredients table
+  // Only query when the field is actively focused AND has 2+ chars
   useEffect(() => {
-    if (!value || value.length < 2) {
+    if (!focused || !value || value.length < 2) {
       setSuggestions([])
       setShowDropdown(false)
       return
@@ -152,19 +153,7 @@ function ShoppingNameInput({ value, onChange }) {
       setShowDropdown(unique.length > 0)
     }, 300)
     return () => clearTimeout(timer)
-  }, [value])
-
-  // Dismiss on outside click
-  useEffect(() => {
-    if (!showDropdown) return
-    function onMouseDown(e) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) {
-        setShowDropdown(false)
-      }
-    }
-    document.addEventListener('mousedown', onMouseDown)
-    return () => document.removeEventListener('mousedown', onMouseDown)
-  }, [showDropdown])
+  }, [value, focused])
 
   function pick(display) {
     onChange(display)
@@ -179,7 +168,8 @@ function ShoppingNameInput({ value, onChange }) {
         placeholder="e.g. Chicken Breast"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        onFocus={() => { if (suggestions.length > 0) setShowDropdown(true) }}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setTimeout(() => { setFocused(false); setShowDropdown(false) }, 150)}
       />
       {showDropdown && (
         <ul className="absolute z-50 left-0 right-0 mt-0.5 bg-white border border-gray-200 rounded-lg shadow-lg overflow-hidden">
