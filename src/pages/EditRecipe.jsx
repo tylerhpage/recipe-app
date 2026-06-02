@@ -10,7 +10,7 @@ const RECIPE_TYPES = ['Breakfast', 'Lunch', 'Dinner', 'Dessert', 'Side', 'Bevera
 // ── Sub-editors (same as AddRecipe) ──────────────────────────────────────────
 
 function blankIngredient() {
-  return { id: crypto.randomUUID(), name: '', quantity: '', unit: '' }
+  return { id: crypto.randomUUID(), name: '', shopping_name: '', quantity: '', unit: '' }
 }
 
 function blankStep() {
@@ -30,28 +30,39 @@ function IngredientsEditor({ ingredients, onChange }) {
   return (
     <div className="space-y-2">
       {ingredients.map((ing) => (
-        <div key={ing.id} className="flex gap-2 items-center">
-          <input
-            className="input flex-1 min-w-0"
-            placeholder="Ingredient"
-            value={ing.name}
-            onChange={(e) => update(ing.id, 'name', e.target.value)}
-          />
-          <input
-            className="input w-20"
-            placeholder="Qty"
-            value={ing.quantity}
-            onChange={(e) => update(ing.id, 'quantity', e.target.value)}
-          />
-          <input
-            className="input w-20"
-            placeholder="Unit"
-            value={ing.unit}
-            onChange={(e) => update(ing.id, 'unit', e.target.value)}
-          />
-          <button onClick={() => remove(ing.id)} className="text-gray-400 hover:text-red-500 transition-colors shrink-0">
-            <Trash2 size={16} />
-          </button>
+        <div key={ing.id} className="flex flex-col gap-1">
+          <div className="flex gap-2 items-center">
+            <input
+              className="input flex-1 min-w-0"
+              placeholder="Ingredient name"
+              value={ing.name}
+              onChange={(e) => update(ing.id, 'name', e.target.value)}
+            />
+            <input
+              className="input w-20"
+              placeholder="Qty"
+              value={ing.quantity}
+              onChange={(e) => update(ing.id, 'quantity', e.target.value)}
+            />
+            <input
+              className="input w-20"
+              placeholder="Unit"
+              value={ing.unit}
+              onChange={(e) => update(ing.id, 'unit', e.target.value)}
+            />
+            <button onClick={() => remove(ing.id)} className="text-gray-400 hover:text-red-500 transition-colors shrink-0">
+              <Trash2 size={16} />
+            </button>
+          </div>
+          <div className="flex items-center gap-2 pl-0">
+            <span className="text-xs text-gray-400 shrink-0">Shopping list name:</span>
+            <input
+              className="input flex-1 text-xs py-1 text-gray-500"
+              placeholder="e.g. Chicken Breast"
+              value={ing.shopping_name ?? ''}
+              onChange={(e) => update(ing.id, 'shopping_name', e.target.value)}
+            />
+          </div>
         </div>
       ))}
       <button
