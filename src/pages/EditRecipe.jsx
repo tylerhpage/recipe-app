@@ -13,11 +13,12 @@ function ShoppingNameInput({ value, onChange }) {
   const [suggestions, setSuggestions] = useState([])
   const [showDropdown, setShowDropdown] = useState(false)
   const [focused, setFocused] = useState(false)
+  const [isDirty, setIsDirty] = useState(false)
   const wrapperRef = useRef(null)
 
-  // Only query when the field is actively focused AND has 2+ chars
+  // Only query when the user has actively typed (isDirty), field is focused, and has 2+ chars
   useEffect(() => {
-    if (!focused || !value || value.length < 2) {
+    if (!focused || !isDirty || !value || value.length < 2) {
       setSuggestions([])
       setShowDropdown(false)
       return
@@ -42,7 +43,7 @@ function ShoppingNameInput({ value, onChange }) {
       setShowDropdown(unique.length > 0)
     }, 300)
     return () => clearTimeout(timer)
-  }, [value, focused])
+  }, [value, focused, isDirty])
 
   function pick(display) {
     onChange(display)
@@ -56,7 +57,7 @@ function ShoppingNameInput({ value, onChange }) {
         className="input w-full text-xs py-1 text-gray-500"
         placeholder="e.g. Chicken Breast"
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => { setIsDirty(true); onChange(e.target.value) }}
         onFocus={() => setFocused(true)}
         onBlur={() => setTimeout(() => { setFocused(false); setShowDropdown(false) }, 150)}
       />
