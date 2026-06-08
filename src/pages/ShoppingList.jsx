@@ -20,7 +20,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Eye, EyeOff, ChevronDown, ChevronRight,
-  Trash2, Check, ShoppingCart, X,
+  Trash2, Check, ShoppingCart, X, Printer,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { loadActiveMenu } from '../lib/activeMenu'
@@ -226,7 +226,7 @@ function ItemRow({ item, editingId, onToggleCheck, onEdit, onSave, onCancel, onD
       {/* Checkbox */}
       <button
         onClick={(e) => { e.stopPropagation(); onToggleCheck(item) }}
-        className={`shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
+        className={`print-item-checkbox shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${
           item.is_checked
             ? 'bg-indigo-600 border-indigo-600'
             : 'border-gray-300 hover:border-indigo-400'
@@ -554,29 +554,51 @@ export default function ShoppingList() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="max-w-2xl mx-auto p-4 pb-24 space-y-4">
+    <div className="print-shopping-list max-w-2xl mx-auto p-4 pb-24 space-y-4">
+
+      {/* ── Print styles ── */}
+      <style>{`
+        @media print {
+          .no-print { display: none !important; }
+          .print-item-checkbox { display: none !important; }
+          nav, header, footer, [role="navigation"] { display: none !important; }
+          body { font-size: 14px; margin: 0; }
+          .print-shopping-list { max-width: 100% !important; padding: 0 !important; }
+        }
+      `}</style>
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Shopping List</h2>
-        {hasItems && (
-          <button
-            onClick={() => setHideChecked((v) => !v)}
-            className={`p-2 rounded-xl border transition-colors ${
-              hideChecked
-                ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
-                : 'border-gray-200 text-gray-400 hover:bg-gray-50'
-            }`}
-            title={hideChecked ? 'Show checked items' : 'Hide checked items'}
-          >
-            {hideChecked ? <EyeOff size={16} /> : <Eye size={16} />}
-          </button>
-        )}
+        <div className="flex items-center gap-1">
+          {hasItems && (
+            <button
+              onClick={() => window.print()}
+              className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:bg-gray-50 transition-colors no-print"
+              title="Print shopping list"
+            >
+              <Printer size={16} />
+            </button>
+          )}
+          {hasItems && (
+            <button
+              onClick={() => setHideChecked((v) => !v)}
+              className={`p-2 rounded-xl border transition-colors ${
+                hideChecked
+                  ? 'border-indigo-300 bg-indigo-50 text-indigo-600'
+                  : 'border-gray-200 text-gray-400 hover:bg-gray-50'
+              }`}
+              title={hideChecked ? 'Show checked items' : 'Hide checked items'}
+            >
+              {hideChecked ? <EyeOff size={16} /> : <Eye size={16} />}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── Action bar ── */}
       {!loading && hasMenu && (
-        <div className="space-y-2">
+        <div className="no-print space-y-2">
           {/* Primary: Generate / Regenerate */}
           <button
             onClick={generate}
@@ -634,7 +656,7 @@ export default function ShoppingList() {
 
       {/* ── Menu-changed banner ── */}
       {menuChanged && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+        <div className="no-print bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
           <p className="text-sm text-amber-800 leading-snug">
             Your menu has changed since this list was generated.
           </p>
@@ -650,7 +672,7 @@ export default function ShoppingList() {
 
       {/* ── Generate error ── */}
       {generateError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start justify-between gap-3">
+        <div className="no-print bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-start justify-between gap-3">
           <p className="text-sm text-red-700 leading-snug">{generateError}</p>
           <button
             onClick={() => setGenerateError(null)}
