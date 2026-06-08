@@ -20,7 +20,7 @@ import { useState, useEffect, useMemo, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Plus, RefreshCw, Eye, EyeOff, ChevronDown, ChevronRight,
-  Trash2, Check, ShoppingCart, X, Printer,
+  Trash2, Check, ShoppingCart, X, Printer, MessageSquare,
 } from 'lucide-react'
 import { supabase } from '../lib/supabase'
 import { loadActiveMenu } from '../lib/activeMenu'
@@ -545,6 +545,24 @@ export default function ShoppingList() {
     setTimeout(() => setClearToast(false), 2500)
   }
 
+  // ── Send as text message ──────────────────────────────────────────────────
+  function handleSendAsText() {
+    const lines = []
+    for (const { category, items: catItems } of grouped) {
+      const unchecked = catItems.filter((i) => !i.is_checked)
+      if (unchecked.length === 0) continue
+      const emoji = CATEGORY_EMOJI[category] ?? '🧴'
+      lines.push(`${emoji} ${category}`)
+      for (const item of unchecked) {
+        const parts = [item.quantity, item.unit, item.name].filter(Boolean)
+        lines.push(`• ${parts.join(' ')}`)
+      }
+      lines.push('')
+    }
+    const text = lines.join('\n').trim()
+    window.open('sms:&body=' + encodeURIComponent(text), '_blank')
+  }
+
   // ── Delete item ───────────────────────────────────────────────────────────
   async function handleDelete(id) {
     await supabase.from('shopping_list_items').delete().eq('id', id)
@@ -571,6 +589,15 @@ export default function ShoppingList() {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold text-gray-900">Shopping List</h2>
         <div className="flex items-center gap-1">
+          {hasItems && (
+            <button
+              onClick={handleSendAsText}
+              className="p-2 rounded-xl border border-gray-200 text-gray-400 hover:bg-gray-50 transition-colors no-print"
+              title="Send as text message"
+            >
+              <MessageSquare size={16} />
+            </button>
+          )}
           {hasItems && (
             <button
               onClick={() => window.print()}
